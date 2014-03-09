@@ -1,7 +1,17 @@
+%!TEX TS-program = xelatex
+%!TEX encoding = UTF-8 Unicode
+
 \documentclass[a4paper,11pt,twocolumn]{article}
 \usepackage[top=1.2in,bottom=1.2in,left=1.2in,right=1in]{geometry}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+\usepackage{fontspec,xltxtra,xunicode}
+\usepackage{booktabs}
+\defaultfontfeatures{Mapping=tex-text}
 
-\title{From Floyd to SPFA}
+\newfontfamily\song{SimSun}
+
+\title{A statistical approach of the tokenization problem in the design of Chinese input method}
 \date{\vspace{-5ex}}
 \author{Jiahao Li}
 
@@ -19,7 +29,160 @@ Tokenization is the process of dividing Chinese sentence romanization into token
 \end{@twocolumnfalse}
 ]
 
-\section{introduction}
+\section{Introduction}
+
+Romanization of Chinese characters is the process of transforming Chinese characters into sequence of Roman alphabet letters. Usually, this is done by mapping each individual Chinese character to its Roman representation through certain rules, and then combine these individual romanizations into the romanization for the entire character sequence. For example, in Jyutping, a romanization pattern that corresponds specifically Cantonese (a dialect of Chinese), Chinese characters ``{\song 你}'' and ``{\song 好}'' are mapped to Roman word ``nei'' and ``hou'' respectively. And therefore, the Jyutping romanization sequence for the Chinese word ``{\song 你好}'' is then ``neihou''.
+
+Inputing Chinese characters on a computer then follows the reverse process. The first step is to break the romanization sequence into subsequences that correspond to the original Chinese characters. For example, in the Jyutping example presented, the sequence ``neihou'' would be broken into subsequences ``nei'' and ``hou.'' This process is called tokenization in the design of Chinese input methods.
+
+Although the process of romanizing Chinese characters is deterministic, the process of tokenization does not yield unique valid result. The sequence ``ngaan,'' for example, can both be treated as a single token or two valid tokens ``ng'' and ``aan.'' Therefore, one of the goals of tokenizing algorithms is to achieve high accuracy in tokenization.
+
+In the following chapter, I will present a statistical algorithm of tokenization that is based on dynamic programming. Then, I will evaluate the accuracy of such algorithm with various Chinese language corpora.
+
+\section{Algorithm}
+
+The tokenization algorithm presented in this section is based on a concept of pairwise proximity, which measures the probability that two particular tokens appear together in the tokenized sequence. The probability measure of a complete tokenization sequence is then defined to be the geometric mean of all pairwise proximities of adjacent pairs of tokens in the sequence. For example, consider a case where the sequence to be tokenized is denoted as $S$, and a particular tokenization solution is denoted as $t=(t_1, t_2, \ldots, t_n)$. Define the function of pairwise proximity to be $P(a, b)$. Then, the probability measure of the complete tokenization sequence, $p$, can be calculated with the following equation:
+
+$$p = \left(\prod_{i=1}^{n-1}{P(t_i,t_{i+1})}\right)^{\frac{1}{n-1}}$$
+
+Based on the concept of pairwise proximity, the algorithm presented in this section then attempts to find the tokenization solution with the highest probability measure. Such notion is based on the fact that certain Chinese syllables (corresponding to individual tokens) go together more frequently than others. And by utilizing these systematic patterns, the algorithm is able to identify the tokenization solution that is most likely to occur in the Chinese language, thus achieving higher tokenization accuracy.
+
+The pairwise proximity function, $P(a, b)$, as defined above is then calculated by running statistics on existing Chinese language corpora. Let $R(a)$ denote the romanized sequence of the Chinese character $a$. For each pair of tokens $(a, b)$, $P(a, b)$ is then defined as the number of pairs of characters $(x, y)$ with $R(x) = a$ and $R(y) = b$ that appear immediately adjacent in the corpora.
+
+With the notion of pairwise proximity defined and its calculation explained, the algorithm then utilizes a dynamic programming model to calculate the optimal solution, that is, the tokenization solution with the largest probability measure (geometric mean of adjacent pairwise proximities).
+
+Let $T$ be the set of all valid romanization tokens, and let $L(t)$ denote the length of the token $t$. Then let $D_{i, t, p}$ denote the largest probability measure attainable in tokenizing the first $i$ characters of $S$ into $p$ tokens with the last token being $t$, where $1 \le i \le n$, $t \in T$, and $1 \le p \le n$.
+
+The terminating cases of this dynamic programming process is self-explanatory: for each pair of tokens $(a, b)$, $D_{L(a)+L(b),b,2}=P(a,b)$ if the first $L(a)+L(b)$ characters of the sequence $S$ match $a+b$. All statuses except those set in this way are then set to be unattainable.
+
+Then, we calculate each $D$ value in the order of increasing $i$ and then increasing $p$ (the order of $t$ does not matter here because the set of tokens itself is an unordered structure). For each triple of $(i, t, p)$, let $s$ be the first $i$ characters of $S$. We first verify if it is a valid combination, that is, whether the last $L(t)$ characters of $s$ matches $t$. Then, we iterate through all tokens as the potential token that precedes $t$ in the sequence. For each token $o$ iterated, we check if $D_{i-L(t), o, p-1}$ is attainable. If so, we can then transit from $D_{i-L(t), o, p-1}$ to $D_{i, t, p}$ by adding $t$ to the sequence denoted by $D_{i-L(t), o, p-1}$ according to the following equation:
+
+$$D_{i, t, p} = \left(P(o, t) D_{i-L(t), o, p-1}^{p-2}\right)^{\frac{1}{p-1}}$$
+
+if such is more optimal, where $D_{i-L(t), o, p-1}^{p-2}$ stands for the optimal pairwise proximity product of the subsequence from character $1$ to character $i-L(t)$ that is divided into $p-1$ tokens with the last one being $o$. $P(o, t)$ is the proximity product given by putting $t$ next to the token $o$. Multiply them and we get a potentially optimal pairwise proximity product of the subsequence $s$ that is divided into $p$ tokens with the last one being $t$.
+
+Continue with this process until all $D$ values are calculated. Then we can identify the optimal pairwise proximity product by enumerating over all possible combinations of 1) last token as $t$ and 2) number of tokens divided into as $p$ and identify the maximal $D_{n,t,p}$.
+
+Finally, to assemble to actual token sequence, we record for each state triple $(i, t, p)$ the state triple from which it is transited as $C_{i, t, p}$. Then we can retrace the steps from the optimal state all the way to one of the initial terminating cases. For brevity, explanation of this process is omitted from this paper as it is a frequently employed technique in the implementation of dynamic programming.
+
+\section{Time complexity analysis}
+
+This section will present time complexity analysis of the algorithm proposed in the last section. To begin with, a sample implementation of the algorithm is provided here in pseudocode (symbols defined as in the last section).
+
+\begin{algorithm}
+\caption{Tokenize romanization sequence $S$}
+
+\begin{algorithmic}
+\REQUIRE $S$ be a valid sequence
+\ENSURE $D$ calculated as defined
+\ENSURE $O$ is the optimal probability
+\STATE set all $D$ states to be unattainable
+\FORALL{token $p$ in $T$}
+  \FORALL{token $q$ in $T$}
+    \IF{$p+q$ matches the start of $S$}
+      \IF{$P(p, q)>D_{L(p)+L(q),q,2}$}
+        \STATE $D_{L(p)+L(q),q,2} \leftarrow P(p,q)$
+      \ENDIF
+    \ENDIF
+  \ENDFOR
+\ENDFOR
+\FOR{$1 \le i \le n$}
+  \STATE{$s \leftarrow$ the first i characters of $S$}
+  \FORALL{token t in $T$}
+    \IF{$t$ does not match the end of $s$}
+      \STATE{skip this iteration}
+    \ENDIF
+    \FOR{$3 \le p \le n$}
+      \FORALL{token $o$ in $T$}
+        \IF{$s$ is shorter than $o$}
+          \STATE{skip this iteration}
+        \ENDIF
+        \IF{$D_{i-L(t),o,k-1}$ is unattainable}
+          \STATE{skip this iteration}
+        \ENDIF
+        \STATE{$x \leftarrow \left(P(o,t) D_{i-L(t),o,k-1}^{k-2}\right)^{\frac{1}{k-1}}$}
+        \IF{$x > D_{i,t,p}$}
+          \STATE{$D_{i,t,p} = x$}
+        \ENDIF
+        \IF{$i = n$ and $D_{i,t,p}>O$}
+          \STATE{$O \leftarrow D_{i,t,p}$}
+        \ENDIF
+      \ENDFOR
+    \ENDFOR
+  \ENDFOR
+\ENDFOR
+\end{algorithmic}
+
+\end{algorithm}
+
+% parse(S):
+%   set all D states to be unattainable
+%   for token p in T:
+%     for token q in T:
+%       if p+q matches the start of S
+%         set D[length of p + length of q][q][2] to be P(p, q) if such is more optimal
+%   for i from 1 to n:
+%     let s be the first i characters of S
+%     for token t in T:
+%       skip this loop unless the end of s matches t
+%       for p from 3 to n:
+%         for token o in T:
+%           skip this loop if s is shorter than o
+%           skip this look if the state D[i - length of t][o][k - 1] is unattainable
+%           set D[i][t][p] to be ((D[i - length of t][o][k - 1]^(k-2)) * P(o, t))^(1/(k-1)) if such is more optimal
+%           update currently optimal solution to D[i][t][p] if such is more optimal
+
+Notice that the retrace process is omitted in the pseudocode, for both the reasons posed in the end of last chapter and that its presence does not alter the time complexity measure of the algorithm.
+
+Also notice that the main time-consuming part of the algorithm consists of four layers of embedded loops of basic operations that are of dimensions $n$, $|T|$, $n$, and $|T|$ respectively. Thus, the time complexity of the algorithm is $\Omega(|T|^2n^2)$, that is, $\Omega(n^2)$.
+
+\section{Simulation and evaluation}
+
+In this section I will carry out simulations of the proposed algorithm on a general purpose corpus of the Chinese languages, which consist of materials including newspaper articles, novels.
+
+To demonstrate that the algorithm proposed can be combined with learning behaviors to yield better results for particular kinds of input work, I will also run the simulation on a single-type corpus of newspaper articles, and then compare the accuracies in these two cases.
+
+And in both cases, the corpus used is divided into two halves that are equal in size. The first half is used to train the pairwise proximity function, that is, to calculate the $P$ function. The algorithm is then run the other half, and the output is then compared with the correct answers to determine the accuracy of the algorithm.
+
+In the Table \ref{table:algo} the simulation results in these two cases is shown.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}lll@{}}
+\toprule
+           & General & News \\ \midrule
+\#         &         &      \\
+\# Correct &         &      \\
+Accuracy   &         &      \\ \bottomrule
+\end{tabular}
+\caption{Simulation results for proposed algorithm}
+\label{table:algo}
+\end{table}
+
+To help put the results in perspective, the simulations are repeated with a naive algorithm (one that always prefers longer tokens), and the results is noted in Table \ref{table:naive}.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}lll@{}}
+\toprule
+           & General & News \\ \midrule
+\#         &         &      \\
+\# Correct &         &      \\
+Accuracy   &         &      \\ \bottomrule
+\end{tabular}
+\caption{Simulation results for naive algorithm}
+\label{table:naive}
+\end{table}
+
+From the results we can see that in both cases, the proposed algorithm out-performs the straightforward approach, by XXXXXXXX and XXXXXXXX respectively. And it achieves the highest accuracy, XXXXXXXX, on the corpus that is consists mainly of newspaper articles.
+
+Also notice that on the newspaper-only corpus the algorithm performs noticeably better than on the general-purpose corpus. This is because training the proximity function $P$ with particular kinds of source materials helps it retrieve more intricate patterns in the language structure. This suggests that the learning behavior can be incorporated into the algorithm to enable it to adapt to the particular kinds of input tasks at hand.
+
+\section{Conclusion and further research}
+
+To conclude, this paper proposes a dynamic-programming-based algorithm that tackles the problem of tokenization in the design of Chinese (or specially, Cantonese) input method. Simulations are then carried out to illustrate the improvement in tokenization accuracy this algorithm brings about. And the results of simulations also suggest that the algorithm can be used in connection with a learning behavior to achieve adaptability for particular types of input tasks.
+
+In the process of research, various insights worth further exploring have risen. For example, it is noticed that a majority of the errors that occur in the process of tokenization is in the form of incorrectly dividing ``sing'' as ``si'' and ``ng'' (or ``ting'' as ``ti'' and ``ng,'' etc.) Therefore, further research on the problem of tokenization should include the exploring of such frequently occurring cases of systematic errors, as it will likely yield results that can further improve the accuracy of the algorithm that is proposed in this paper.
 
 
 \bibliography{jp_paper.bib}
